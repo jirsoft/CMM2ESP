@@ -1,6 +1,6 @@
 # CMM2ESP
 Arduino code for ESP8266 connected to CMM2. It comunicates with CMM2 over serial port with default speed of 691200 baud.
-It knows this commands:
+It knows these commands:
 
 **@datetime**
 * gets date and time in format **yyyy-mm-dd hh:mm:ss**
