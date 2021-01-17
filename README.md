@@ -1,6 +1,7 @@
 # CMM2ESP
 Arduino code for ESP8266 connected to CMM2. It comunicates with CMM2 over serial port with default speed of 691200 baud.
 It knows this commands:
+
 **@datetime**
 * gets date and time in format **yyyy-mm-dd hh:mm:ss**
 
@@ -32,15 +33,12 @@ It knows this commands:
 * send HTTP GET request to server
 * returns **HTTPGET url|number of batches (n)** and then **n** times **split** characters with answer
   
-  ***EXAMPLE 1:
-  **@httpget(scooterlabs.com/echo?ip)**
-  * receive
+  SEND **@httpget(scooterlabs.com/echo?ip)**
   * **HTTPGET http://scooterlabs.com/echo?ip|1**	
   follows just 1 packet (default split is 250 characters)
   * **1.2.3.4**
 		
-  ***EXAMPLE 2:
-  **@httpget(scooterlabs.com/echo?ip|3)**
+  SEND **@httpget(scooterlabs.com/echo?ip|3)**
     * **HTTPGET http://scooterlabs.com/echo?ip|3**	follow 3 packets (split was set to 3 characters per batch)
     * **1.2**
     * **.3.**
