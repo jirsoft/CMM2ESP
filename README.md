@@ -31,6 +31,7 @@ It knows this commands:
 **@httpget(url|split)**
   send HTTP GET request to server
   returns **HTTPGET url|number of batches (n)** and then **n** times **split** characters with answer
+  
   EXAMPLE 1:
   	send
 		**@httpget(scooterlabs.com/echo?ip)**
