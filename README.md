@@ -49,15 +49,11 @@ It knows this commands:
 
 Then is here few commands for Napoleon Commander and test
 **@speedtest**
-  for speed measurement
-  prepares random data and then send **data length, packet length, number of packets, rest in last packet**
-  you need to accept this data, on the end sends 1 line with speed info and CRC8
-  next expects **number of bytes to receive** followed with this exact amount
-  againg on the end returns spped into
+  Just for speed measurement. Prepares random data and then send **data length, packet length, number of packets, rest in last packet**, you need to accept this data, on the end it sends 1 line with speed info and CRC8.
+  Next expects **number of bytes to receive** followed with this exact amount,  againg on the end returns spped into
   
 **Napoleon Commander command**
-  **@NC_?, @NC_W, @NC_R, @NC_C, @NC_D, @NC_T, @NC_M, @NC_N and @NC_K**
-  theese commands are used for communication with **NCudpServer.py**
+  **@NC_?, @NC_W, @NC_R, @NC_C, @NC_D, @NC_T, @NC_M, @NC_N and @NC_K**. These commands are used for communication with **NCudpServer.py**
 
 
 #### v0.38
