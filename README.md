@@ -30,11 +30,12 @@ It knows these commands:
 * returns info **Connected to SSID, BSSID, RSI**
   
 **@httpget(url|split)**
+* split is not mandatory, default split is 250 characters
 * send HTTP GET request to server
 * returns **HTTPGET url|number of batches (n)** and then **n** times **split** characters with answer
   
   SEND **@httpget(scooterlabs.com/echo?ip)**
-  * **HTTPGET http://scooterlabs.com/echo?ip|1**, follows just 1 packet (default split is 250 characters)
+  * **HTTPGET http://scooterlabs.com/echo?ip|1**, follows just 1 packet (used default split is 250 characters)
   * **1.2.3.4**
 		
   SEND **@httpget(scooterlabs.com/echo?ip|3)**
