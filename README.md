@@ -33,11 +33,11 @@ It knows this commands:
   returns **HTTPGET url|number of batches (n)** and then **n** times **split** characters with answer
   
   EXAMPLE 1:
-  	send
-		**@httpget(scooterlabs.com/echo?ip)**
-	receive
-		**HTTPGET http://scooterlabs.com/echo?ip|1**	follow just 1 packet (default split is 250 characters)
-		**1.2.3.4**
+  send
+  **@httpget(scooterlabs.com/echo?ip)**
+  receive
+  **HTTPGET http://scooterlabs.com/echo?ip|1**	follows just 1 packet (default split is 250 characters)
+  **1.2.3.4**
 		
   EXAMPLE 2:
   	send
