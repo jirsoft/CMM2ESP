@@ -39,7 +39,8 @@ It knows this commands:
   * **1.2.3.4**
 		
   SEND **@httpget(scooterlabs.com/echo?ip|3)**
-    * **HTTPGET http://scooterlabs.com/echo?ip|3**	follow 3 packets (split was set to 3 characters per batch)
+    * **HTTPGET http://scooterlabs.com/echo?ip|3**
+    follow 3 packets (split was set to 3 characters per batch)
     * **1.2**
     * **.3.**
     * **4**
