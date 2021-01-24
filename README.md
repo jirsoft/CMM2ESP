@@ -52,6 +52,10 @@ Then is here few commands for Napoleon Commander and test
 **Napoleon Commander command**
 * **@NC_?, @NC_W, @NC_R, @NC_C, @NC_D, @NC_T, @NC_M, @NC_N and @NC_K**. These commands are used for communication with **NCudpServer.py**
 
+### VERSION HISTORY
 
+#### v0.48
+	first public version in own repository
+	
 #### v0.38
 	first public version in own repository
