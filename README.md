@@ -2,6 +2,9 @@
 Arduino code for ESP8266 connected to CMM2. It comunicates with CMM2 over serial port with default speed of 691200 baud.
 It knows these commands:
 
+**@dhelp**
+* gets short help
+
 **@datetime**
 * gets date and time in format **yyyy-mm-dd hh:mm:ss**
 
@@ -29,7 +32,11 @@ It knows these commands:
 * connect to AP
 * returns info **Connected to SSID, BSSID, RSI**
   
-**@httpget(url|split)**
+**@tcp(server:port)**
+* connects to TCP server
+* connection can be broken with +++ (3 following pluses)
+
+**@http(url|split)**
 * split is not mandatory, default split is 250 characters
 * send HTTP GET request to server
 * returns **HTTPGET url|number of batches (n)** and then **n** times **split** characters with answer
@@ -55,7 +62,10 @@ Then is here few commands for Napoleon Commander and test
 ### VERSION HISTORY
 
 #### v0.48
-	first public version in own repository
+	added tcpconnect (@tcp)
+	httpget renamed @hhtp
+	added @help
+	optimisation on NC commands
 	
 #### v0.38
 	first public version in own repository
