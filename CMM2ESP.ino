@@ -7,9 +7,12 @@
 #include <WiFiUdp.h>
 #include <Time.h>
 #include <TimeLib.h>
+#include <ESP8266Ping.h>
 
-const String ESPversion = "0.38";
+const String ESPversion = "0.48";
 
+const long serTimeout = 5000; //5s serial input timeout
+const long udpTimeout = 5000; //5s UDP input timeout
 char serByte;
 char serMode = 0; // 0 = command mode, 1 = file mode
 String serCommand = "";
@@ -78,7 +81,7 @@ void setup() {
       Serial.println("End Failed");
     }
   });
-  Serial.setTimeout(3000);
+  Serial.setTimeout(serTimeout);
   WiFi.disconnect();
 }
 
@@ -197,7 +200,7 @@ String getUdpString()
   unsigned long timeOut = millis();
   String received = "";
   
-  while (!udpSize and (millis() - timeOut) < 3000)
+  while (!udpSize and (millis() - timeOut) < udpTimeout)
     udpSize = udp.parsePacket();
   if (udpSize)
   {
@@ -221,18 +224,14 @@ void testUdpPacket()
     received.remove(n);
     if (received.equalsIgnoreCase("NCudpServer\n"))
     {
+      NCwifiServerFound = true;
+      udpIP = udp.remoteIP();
+      udpOut("NConCMM2\n");
       if (!NCwifiServerFound or udpIP != udp.remoteIP())
-      {
-        NCwifiServerFound = true;
-        udpIP = udp.remoteIP();
-        udpOut("NConCMM2\n");
         serOut("NCudpServer found on " + udpIP.toString() + ":" + String(udpPort));
-      }
     }
     else
       serOut(received);
-
-    //sendUdpCommand("OK\n");
   }  
 }
 
@@ -258,6 +257,7 @@ void ncD()
 
 void ncW(String ww)
 {
+  String hlp;
   int fileLen = ww.substring(ww.indexOf('|') + 1).toInt();
   //udpOut("Max size is " + String(UDP_TX_PACKET_MAX_SIZE) + "\n");
   unsigned int maxPak = UDP_TX_PACKET_MAX_SIZE;
@@ -265,9 +265,11 @@ void ncW(String ww)
   int pakRem = fileLen % UDP_TX_PACKET_MAX_SIZE;
   int pakSize;
 
-  udpOut("#" + String(fileLen) + "," + String(pakCount) + "," + String(pakRem) + "\n");
+  //udpOut("#" + String(fileLen) + "," + String(pakCount) + "," + String(pakRem) + "\n");
   udpOut("W" + ww + "\n");
-  serOut(getUdpString());
+  hlp = getUdpString();
+  udpOut("#" + hlp + "\n");
+  serOut(hlp);
   
   for (int i = 0; i < pakCount; i++)
   {
@@ -275,6 +277,7 @@ void ncW(String ww)
     while (pakSize < UDP_TX_PACKET_MAX_SIZE)
       if (Serial.available() > 0)
         pakSize += Serial.readBytes(udpSendBuffer + pakSize, min(Serial.available(), UDP_TX_PACKET_MAX_SIZE - pakSize));
+        
     udpSendBuffer[pakSize + 1] = 0;
     udp.beginPacket(udpIP, udpPort);
     udp.write(udpSendBuffer, pakSize);
@@ -287,12 +290,15 @@ void ncW(String ww)
     while (pakSize < pakRem)
       if (Serial.available() > 0)
         pakSize += Serial.readBytes(udpSendBuffer + pakSize, min(Serial.available(), pakRem - pakSize));
+
     udpSendBuffer[pakSize + 1] = 0;
     udp.beginPacket(udpIP, udpPort);
     udp.write(udpSendBuffer, pakSize);
     udp.endPacket();        
   }
-  serOut(getUdpString());
+  hlp = getUdpString();
+  udpOut("#" + hlp + "\n");
+  serOut(hlp);
 }
 
 void ncR(String ww)
@@ -328,7 +334,7 @@ void ncR(String ww)
       udpOut("NEXT\n");
       udpSize = 0;
       timeOut = millis();
-      while (!udpSize and (millis() - timeOut) < 3000)
+      while (!udpSize and (millis() - timeOut) < udpTimeout)
         udpSize = udp.parsePacket();
       if (udpSize)
       {
@@ -345,7 +351,7 @@ void ncR(String ww)
       udpOut("NEXT\n");
       udpSize = 0;
       timeOut = millis();
-      while (!udpSize and (millis() - timeOut) < 3000)
+      while (!udpSize and (millis() - timeOut) < udpTimeout)
         udpSize = udp.parsePacket();
       if (udpSize)
       {
@@ -385,6 +391,138 @@ void ncT()
   else
     serOut("ncT timeout");
 }
+
+void httpGet(String url)
+{
+  int split = 250;
+  WiFiClient client;
+  HTTPClient http;
+  int pos = url.indexOf('|');
+  if (pos >= 0)
+  {
+    split = url.substring(pos + 1).toInt();
+    url.remove(pos);
+  }
+  if (!url.startsWith("http"))
+    url = "http://" + url;
+
+  http.begin(url.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0) 
+  {
+    String payload = http.getString();
+    int lines = payload.length() / split;
+    if (payload.length() % split)
+      lines++;
+    serOut("HTTPGET " + url + '|' + String(lines));
+    for(int i = 0; i <  payload.length(); i += split)
+    {
+      if ((i + split) < payload.length())
+        serOut(payload.substring(i, i + split));
+      else
+        serOut(payload.substring(i));
+    }
+  }
+  else
+    serOut("Error code: " + String(httpResponseCode));
+}
+
+void tcpConnect(String server)
+{
+  int port = 80, plus = 0;
+  WiFiClient client;
+  int pos = server.indexOf(':');
+  if (pos >= 0)
+  {
+    port = server.substring(pos + 1).toInt();
+    server.remove(pos);
+  }
+  
+  if (client.connect(server, port))
+  {
+    serOut("TCPCONNECTed to " + server + ':' + String(port));
+    while (client.connected())
+    {
+      if (client.available())
+      {
+        char c = client.read();
+        Serial.print(c);
+      }
+      while (Serial.available() > 0 and plus < 3)
+      {
+        if (Serial.read() == '+')
+          plus++;
+        else
+          plus = 0;
+      }
+      if (plus >= 3)
+      {
+        client.stop();
+        serOut("TCPCONNECT canceled with +++");
+        return;
+      }
+    }
+    client.stop();
+    serOut("TCPCONNECT disconnected");
+  }
+  else
+    serOut("TCPCONNECT error");
+}
+
+void pinger(String remote_host)
+{
+  if(Ping.ping(remote_host.c_str(), 1))
+    serOut("ping " + remote_host + " ... success");
+  else
+     serOut("ping " + remote_host + " ... error");
+}
+
+void outHelp()
+{
+  serOut("HELP,10");
+  serOut("@connect(SSID,password)");
+  serOut("@datetime");
+  serOut("@disconnect");
+  serOut("@help");
+  serOut("@http(url|split)");
+  serOut("@mac");
+  serOut("@netinfo");
+  serOut("@ping(IP)");
+  serOut("@reboot");
+  serOut("@scan");
+  serOut("@speedtest");
+  serOut("@tcp(server:port)");
+  serOut("@ver");
+  serOut("");
+  serOut("@NC_commands for Napoleon Commander UDP server");
+}
+
+void wifiConnect(String ssid)
+{
+  int pos = ssid.indexOf(",");
+  if (pos >= 0)
+  {
+    String pass = ssid.substring(pos + 1);
+    ssid.remove(pos);
+
+    if (WiFi.status() == WL_CONNECTED)
+      WiFi.disconnect();
+    
+    WiFi.begin(ssid, pass);
+    if (WiFi.waitForConnectResult() == WL_CONNECTED)
+    {
+      ArduinoOTA.begin();
+      timeClient.begin();
+      timeClient.update();
+      setTime(timeClient.getEpochTime());
+      serOut("Connected to " + WiFi.SSID() + "," + WiFi.BSSIDstr() + "," + String(WiFi.RSSI()));
+      udp.begin(udpPort);
+    }
+    else
+      serOut("Not connected to '" + ssid + "'/'" + pass + "'");        
+  }
+}
+
 void loop() {
   ArduinoOTA.handle();
   timeClient.update();
@@ -522,71 +660,36 @@ void loop() {
 
     else if (serCommand.substring(0, 8).equalsIgnoreCase("connect(") && serCommand.endsWith(")"))
     {
-      String ssid = serCommand.substring(8, serCommand.length() - 1);
-      int pos = ssid.indexOf(",");
-      if (pos >= 0)
-      {
-        String pass = ssid.substring(pos + 1);
-        ssid.remove(pos);
+      wifiConnect(serCommand.substring(8, serCommand.length() - 1));
+    }
 
-        if (WiFi.status() == WL_CONNECTED)
-          WiFi.disconnect();
-        
-        WiFi.begin(ssid, pass);
-        if (WiFi.waitForConnectResult() == WL_CONNECTED)
-        {
-          ArduinoOTA.begin();
-          timeClient.begin();
-          timeClient.update();
-          setTime(timeClient.getEpochTime());
-          serOut("Connected to " + WiFi.SSID() + "," + WiFi.BSSIDstr() + "," + String(WiFi.RSSI()));
-          udp.begin(udpPort);
-        }
-        else
-          serOut("Not connected to '" + ssid + "'/'" + pass + "'");        
-      }
+    else if (serCommand.substring(0, 5).equalsIgnoreCase("ping(") && serCommand.endsWith(")"))
+    {
+      if (WiFi.status() == WL_CONNECTED)
+        pinger(serCommand.substring(5, serCommand.length() - 1));
     }
     
-    else if ((WiFi.status() == WL_CONNECTED) && serCommand.substring(0, 8).equalsIgnoreCase("httpget(") && serCommand.endsWith(")"))
+    else if ((WiFi.status() == WL_CONNECTED) && serCommand.substring(0, 5).equalsIgnoreCase("http(") && serCommand.endsWith(")"))
     {
-      int split = 250;
-      WiFiClient client;
-      HTTPClient http;
-      String url = serCommand.substring(8, serCommand.length() - 1);
-      int pos = url.indexOf('|');
-      if (pos >= 0)
-      {
-        split = url.substring(pos + 1).toInt();
-        url.remove(pos);
-      }
-      if (!url.startsWith("http"))
-        url = "http://" + url;
-
-      http.begin(url.c_str());
-      int httpResponseCode = http.GET();
-      if (httpResponseCode > 0) 
-      {
-        String payload = http.getString();
-        int lines = payload.length() / split;
-        if (payload.length() % split)
-          lines++;
-        serOut("HTTPGET " + url + '|' + String(lines));
-        for(int i = 0; i <  payload.length(); i += split)
-        {
-          if ((i + split) < payload.length())
-            serOut(payload.substring(i, i + split));
-          else
-            serOut(payload.substring(i));
-        }
-      }
-      else
-        serOut("Error code: " + String(httpResponseCode));
+      if (WiFi.status() == WL_CONNECTED)
+        httpGet(serCommand.substring(5, serCommand.length() - 1));
     }
 
-    else if (serCommand == "reboot")
+    else if ((WiFi.status() == WL_CONNECTED) && serCommand.substring(0, 4).equalsIgnoreCase("tcp(") && serCommand.endsWith(")"))
+    {
+      if (WiFi.status() == WL_CONNECTED)
+        tcpConnect(serCommand.substring(4, serCommand.length() - 1));
+    }
+
+    else if (serCommand.equalsIgnoreCase("reboot"))
     {
       serOut("Rebooting...");
       ESP.restart();
+    }
+
+    else if (serCommand.equalsIgnoreCase("help"))
+    {
+      outHelp();
     }
     
     else
