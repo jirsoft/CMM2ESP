@@ -9,7 +9,7 @@
 #include <TimeLib.h>
 #include <ESP8266Ping.h>
 
-const String ESPversion = "0.48";
+const String ESPversion = "0.50";
 
 const long serTimeout = 5000; //5s serial input timeout
 const long udpTimeout = 5000; //5s UDP input timeout
@@ -268,7 +268,7 @@ void ncW(String ww)
   //udpOut("#" + String(fileLen) + "," + String(pakCount) + "," + String(pakRem) + "\n");
   udpOut("W" + ww + "\n");
   hlp = getUdpString();
-  udpOut("#" + hlp + "\n");
+  //udpOut("#" + hlp + "\n");
   serOut(hlp);
   
   for (int i = 0; i < pakCount; i++)
@@ -297,7 +297,7 @@ void ncW(String ww)
     udp.endPacket();        
   }
   hlp = getUdpString();
-  udpOut("#" + hlp + "\n");
+  //udpOut("#" + hlp + "\n");
   serOut(hlp);
 }
 
@@ -441,16 +441,20 @@ void tcpConnect(String server)
   if (client.connect(server, port))
   {
     serOut("TCPCONNECTed to " + server + ':' + String(port));
+    char ch;
     while (client.connected())
     {
       if (client.available())
       {
-        char c = client.read();
-        Serial.print(c);
+        ch = client.read();
+        Serial.print(ch);
       }
       while (Serial.available() > 0 and plus < 3)
       {
-        if (Serial.read() == '+')
+        ch = Serial.read();
+        Serial.print(ch);
+        client.write(ch);
+        if (ch == '+')
           plus++;
         else
           plus = 0;
