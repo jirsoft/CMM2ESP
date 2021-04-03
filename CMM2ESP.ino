@@ -9,7 +9,8 @@
 #include <TimeLib.h>
 #include <ESP8266Ping.h>
 
-const String ESPversion = "0.50";
+
+const String ESPversion = "0.65";
 
 const long serTimeout = 5000; //5s serial input timeout
 const long udpTimeout = 5000; //5s UDP input timeout
@@ -18,22 +19,28 @@ char serMode = 0; // 0 = command mode, 1 = file mode
 String serCommand = "";
 
 const long utcOffsetInSeconds = 3600;
+const int udpPacketLength = 8002;
+
 time_t CURRENT_TIME = now();
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds, 60000);
 
 unsigned int udpPort = 34701;
-unsigned int dbgPort = 1313;
+unsigned int tcpPort = 34702;
+unsigned int dbgPort = 34703;
 IPAddress udpIP;
 boolean NCwifiServerFound = false;
 
 WiFiUDP udp;
-char udpRecBuffer[UDP_TX_PACKET_MAX_SIZE + 1];
-char udpSendBuffer[UDP_TX_PACKET_MAX_SIZE + 1];
+char udpRecBuffer[udpPacketLength + 1];
+char udpSendBuffer[udpPacketLength + 1];
 int udpSize;
 
+WiFiServer server(tcpPort);
+
+
 void setup() {
-  Serial.begin(691200); //921600
+  Serial.begin(691200);
   serOut("\nBooting");
   serOut("ESP ready");
   
@@ -184,14 +191,11 @@ void udpOut(String s)
 
 void udpDebug(String s)
 {
-  if (NCwifiServerFound)
-  {
-    s.toCharArray(udpSendBuffer, s.length());
-    udpSendBuffer[s.length() + 1] = 0;
-    udp.beginPacket(udpIP, dbgPort);
-    udp.write(udpSendBuffer, s.length());
-    udp.endPacket();
-  }
+  s.toCharArray(udpSendBuffer, s.length());
+  udpSendBuffer[s.length() + 1] = 0;
+  udp.beginPacket(udpIP, dbgPort);
+  udp.write(udpSendBuffer, s.length());
+  udp.endPacket();
 }
 
 String getUdpString()
@@ -204,7 +208,7 @@ String getUdpString()
     udpSize = udp.parsePacket();
   if (udpSize)
   {
-    int n = udp.read(udpRecBuffer, UDP_TX_PACKET_MAX_SIZE);
+    int n = udp.read(udpRecBuffer, udpPacketLength);
     
     received = String(udpRecBuffer);
     received.remove(n);
@@ -219,7 +223,7 @@ void testUdpPacket()
   {
     //serOut("Received packet of size " + String(udpSize) + " from " + udp.remoteIP().toString() + ":" + String(udp.remotePort()));
 
-    int n = udp.read(udpRecBuffer, UDP_TX_PACKET_MAX_SIZE);
+    int n = udp.read(udpRecBuffer, udpPacketLength);
     String received = (char *)udpRecBuffer;
     received.remove(n);
     if (received.equalsIgnoreCase("NCudpServer\n"))
@@ -235,69 +239,162 @@ void testUdpPacket()
   }  
 }
 
-void ncD()
+void ncD(String ww)
 {
-  String dir = getUdpString();
-  if (dir != "")
-  {
-    int count = dir.substring(1, dir.indexOf('|')).toInt();
-    
-    serOut(dir);
+  String fileName = ww.substring(0, ww.indexOf('|'));
+  int partLen = ww.substring(ww.indexOf('|') + 1).toInt();
+  int udpSize, counter;
+  unsigned long timeOut;
+  String received;
+  udpOut("D" + ww + "\n");
+  
+  String rdy = getUdpString();
+  serOut(rdy);
+  int fileLen = rdy.substring(rdy.indexOf('|') + 1).toInt();
+  int partNum = fileLen / partLen;
+  int partRem = fileLen % partLen;
+  int partCount = partNum;
+  if (partRem > 0)
+    partCount++;
+  int rep = 0;
+  bool ok = true;
 
-    for (int i = 0; i < count; i++)
+
+  //serOut("#" + String(fileLen) + "," + String(partNum) + "," + String(partRem) + "," + String(partCount));
+  if (Serial.readStringUntil('\n') == "START")
+  {
+    udpOut("#START\n");
+    int i = 0;
+    while (i < partCount)
     {
-      if (Serial.readStringUntil('\n') == "NEXT")
-        udpOut("NEXT\n");
-      serOut(getUdpString());
+      if (ok)
+        udpOut("#NEXT\n");
+      else
+      {
+        if (rep < 3)
+          udpOut("#REPEAT"+ String(i) + "\n");
+        else
+        {
+          udpOut("#CANCEL\n");
+          return;
+        }
+      }
+        
+      udpSize = 0;
+      timeOut = millis();
+      while (!udpSize and (millis() - timeOut) < udpTimeout)
+        udpSize = udp.parsePacket();
+      if (udpSize)
+      {
+        if (i < partNum)
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        else
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        counter = udpRecBuffer[0] + 256 * udpRecBuffer[1];
+        if (counter == i)
+        {
+          ok = true;
+          rep = 0;
+          if (Serial.readStringUntil('\n') == "NEXT")
+          {
+            if (i < partNum)
+              Serial.write(udpRecBuffer + 2, partLen);
+            else
+              Serial.write(udpRecBuffer + 2, partRem);
+            i++;
+          }
+        }
+        else
+        {
+          ok = false;
+          rep++;
+        }
+      }
     }
+    
+    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
   }
-  else
-    serOut("ncD timeout");
 }
 
 void ncW(String ww)
 {
+  const int packetSize = 8000;
   String hlp;
   int fileLen = ww.substring(ww.indexOf('|') + 1).toInt();
-  //udpOut("Max size is " + String(UDP_TX_PACKET_MAX_SIZE) + "\n");
-  unsigned int maxPak = UDP_TX_PACKET_MAX_SIZE;
-  int pakCount = fileLen / UDP_TX_PACKET_MAX_SIZE;
-  int pakRem = fileLen % UDP_TX_PACKET_MAX_SIZE;
-  int pakSize;
-
-  //udpOut("#" + String(fileLen) + "," + String(pakCount) + "," + String(pakRem) + "\n");
+  int packNum = fileLen / packetSize;
+  int packRem = fileLen % packetSize;
+  int actSize, expect;
+  int actPack = 0, maxRep = 3, numRep = 0;
+  int rep;
+  
   udpOut("W" + ww + "\n");
   hlp = getUdpString();
-  //udpOut("#" + hlp + "\n");
   serOut(hlp);
   
-  for (int i = 0; i < pakCount; i++)
+  for (int i = 0; i < packNum; i++)
   {
-    pakSize = 0;
-    while (pakSize < UDP_TX_PACKET_MAX_SIZE)
-      if (Serial.available() > 0)
-        pakSize += Serial.readBytes(udpSendBuffer + pakSize, min(Serial.available(), UDP_TX_PACKET_MAX_SIZE - pakSize));
-        
-    udpSendBuffer[pakSize + 1] = 0;
-    udp.beginPacket(udpIP, udpPort);
-    udp.write(udpSendBuffer, pakSize);
-    udp.endPacket();    
+    actSize = 2;
+    while (actSize < (packetSize + 2))
+    {
+      expect = min(125, packetSize - actSize + 2);
+      serOut("NEXT");
+      while(Serial.available() < expect)
+        ;
+      actSize += Serial.readBytes(udpSendBuffer + actSize, expect);
+    }
+
+    udpSendBuffer[0] = char(i % 256);
+    udpSendBuffer[1] = char(i / 256);
+    udpSendBuffer[actSize] = 0;
+
+    rep = 0;
+    while (rep < 3)
+    {        
+      udp.beginPacket(udpIP, udpPort);
+      udp.write(udpSendBuffer, actSize);
+      udp.endPacket(); 
+      
+      hlp = getUdpString();
+      if (hlp.toInt() == i)
+        rep = 10;   
+      else
+        rep++;   
+      serOut(hlp);
+    }
   }
 
-  if (pakRem > 0)
+  if (packRem > 0)
   {
-    pakSize = 0;
-    while (pakSize < pakRem)
-      if (Serial.available() > 0)
-        pakSize += Serial.readBytes(udpSendBuffer + pakSize, min(Serial.available(), pakRem - pakSize));
+    actSize = 2;
+    while (actSize < (packRem + 2))
+    {
+      expect = min(125, packRem - actSize + 2);
+      serOut("NEXT");
+      while(Serial.available() < expect)
+        ;
+      actSize += Serial.readBytes(udpSendBuffer + actSize, expect);
+    }
+    
+    udpSendBuffer[0] = char(packNum % 256);
+    udpSendBuffer[1] = char(packNum / 256);
+    udpSendBuffer[actSize] = 0;
 
-    udpSendBuffer[pakSize + 1] = 0;
-    udp.beginPacket(udpIP, udpPort);
-    udp.write(udpSendBuffer, pakSize);
-    udp.endPacket();        
+    rep = 0;
+    while (rep < 3)
+    {        
+      udp.beginPacket(udpIP, udpPort);
+      udp.write(udpSendBuffer, actSize);
+      udp.endPacket();
+      
+      hlp = getUdpString();
+      if (hlp.toInt() == packNum)
+        rep = 10;   
+      else
+        rep++;   
+      serOut(hlp);
+    }
   }
   hlp = getUdpString();
-  //udpOut("#" + hlp + "\n");
   serOut(hlp);
 }
 
@@ -305,91 +402,153 @@ void ncR(String ww)
 {
   String fileName = ww.substring(0, ww.indexOf('|'));
   int partLen = ww.substring(ww.indexOf('|') + 1).toInt();
-  int udpSize;
-  unsigned int maxPak = 32 * partLen;
-  int pakSize;
+  int udpSize, counter;
   unsigned long timeOut;
   String received;
+  udpOut("R" + ww + "\n");
   
-  //udpOut("#" + fileName + "|" + String(partLen) + "\n");
-  //udpDebug("#" + fileName + "|" + String(partLen) + "\n");
-  udpOut("R" + fileName + "|" + String(maxPak) + "\n");
-  //udpDebug("R" + fileName + "|" + String(maxPak) + "\n");
-
   String rdy = getUdpString();
   int fileLen = rdy.substring(rdy.indexOf('|') + 1).toInt();
-  int pakCount = fileLen / maxPak;
-  int pakRem = fileLen % maxPak;
-  int partCount = fileLen / partLen;
+  int partNum = fileLen / partLen;
   int partRem = fileLen % partLen;
-  
+  int partCount = partNum;
+  int rep = 0;
+  bool ok = true;
+
+  if (partRem > 0)
+    partCount++;
+    
   serOut(rdy);
-  //udpDebug("fileLen=" + String(fileLen) + ", pakCount=" + String(pakCount) + ", pakRem=" + String(pakRem) + '\n');
-  //udpDebug("partLen=" + String(partLen) + ", partCount=" + String(partCount) + ", partRem=" + String(partRem) + '\n');
   if (Serial.readStringUntil('\n') == "START")
   {
-    udpOut("START\n");
-    for (int i = 0; i < pakCount; i++)
+    udpOut("#START\n");
+    int i = 0;
+    while (i < partCount)
     {
-      udpOut("NEXT\n");
+      if (ok)
+        udpOut("#NEXT\n");
+      else
+      {
+        if (rep < 3)
+          udpOut("#REPEAT"+ String(i) + "\n");
+        else
+        {
+          udpOut("#CANCEL\n");
+          return;
+        }
+      }
+        
       udpSize = 0;
       timeOut = millis();
       while (!udpSize and (millis() - timeOut) < udpTimeout)
         udpSize = udp.parsePacket();
       if (udpSize)
       {
-        pakSize = udp.read(udpRecBuffer, maxPak);
-      
-        for (int j = 0; j < 32; j++)
+        if (i < partNum)
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        else
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        counter = udpRecBuffer[0] + 256 * udpRecBuffer[1];
+        if (counter == i)
+        {
+          ok = true;
+          rep = 0;
           if (Serial.readStringUntil('\n') == "NEXT")
-            Serial.write(udpRecBuffer + (j * partLen), partLen);
+          {
+            if (i < partNum)
+              Serial.write(udpRecBuffer + 2, partLen);
+            else
+              Serial.write(udpRecBuffer + 2, partRem);
+            i++;
+          }
+        }
+        else
+        {
+          ok = false;
+          rep++;
+        }
       }
     }
-
-    if (pakRem > 0)
-    {
-      udpOut("NEXT\n");
-      udpSize = 0;
-      timeOut = millis();
-      while (!udpSize and (millis() - timeOut) < udpTimeout)
-        udpSize = udp.parsePacket();
-      if (udpSize)
-      {
-        pakSize = udp.read(udpRecBuffer, pakRem);
-        //udpDebug("pakSize = " + String(pakSize) + '\n');
-               
-        for (int j = 0; j < (partCount - (32 * pakCount)); j++)
-          if (Serial.readStringUntil('\n') == "NEXT")
-            Serial.write(udpRecBuffer + (j * partLen), partLen);
-        if (partRem > 0)
-          if (Serial.readStringUntil('\n') == "NEXT")
-            Serial.write(udpRecBuffer + (pakSize - partRem), partRem);
-      }
-    }
-
-    udpOut(Serial.readStringUntil('\n') + "\n");
     
+    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
   }
 }
 
-void ncT()
+void ncT(String ww)
 {
-  String dir = getUdpString();
-  if (dir != "")
-  {
-    int count = dir.substring(1, dir.indexOf('|')).toInt();
-    
-    serOut(dir);
+  String fileName = ww.substring(0, ww.indexOf('|'));
+  int partLen = ww.substring(ww.indexOf('|') + 1).toInt();
+  int udpSize, counter;
+  unsigned long timeOut;
+  String received;
+  udpOut("T" + ww + "\n");
+  
+  String rdy = getUdpString();
+  serOut(rdy);
+  int fileLen = rdy.substring(rdy.indexOf('|') + 1).toInt();
+  int partNum = fileLen / partLen;
+  int partRem = fileLen % partLen;
+  int partCount = partNum;
+  if (partRem > 0)
+    partCount++;
+  int rep = 0;
+  bool ok = true;
 
-    for (int i = 0; i < count; i++)
+
+  //serOut("#" + String(fileLen) + "," + String(partNum) + "," + String(partRem) + "," + String(partCount));
+  if (Serial.readStringUntil('\n') == "START")
+  {
+    udpOut("#START\n");
+    int i = 0;
+    while (i < partCount)
     {
-      if (Serial.readStringUntil('\n') == "NEXT")
-        udpOut("NEXT\n");
-      serOut(getUdpString());
+      if (ok)
+        udpOut("#NEXT\n");
+      else
+      {
+        if (rep < 3)
+          udpOut("#REPEAT"+ String(i) + "\n");
+        else
+        {
+          udpOut("#CANCEL\n");
+          return;
+        }
+      }
+        
+      udpSize = 0;
+      timeOut = millis();
+      while (!udpSize and (millis() - timeOut) < udpTimeout)
+        udpSize = udp.parsePacket();
+      if (udpSize)
+      {
+        if (i < partNum)
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        else
+          udpSize = udp.read(udpRecBuffer, udpPacketLength);
+        counter = udpRecBuffer[0] + 256 * udpRecBuffer[1];
+        if (counter == i)
+        {
+          ok = true;
+          rep = 0;
+          if (Serial.readStringUntil('\n') == "NEXT")
+          {
+            if (i < partNum)
+              Serial.write(udpRecBuffer + 2, partLen);
+            else
+              Serial.write(udpRecBuffer + 2, partRem);
+            i++;
+          }
+        }
+        else
+        {
+          ok = false;
+          rep++;
+        }
+      }
     }
+    
+    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
   }
-  else
-    serOut("ncT timeout");
 }
 
 void httpGet(String url)
@@ -521,6 +680,7 @@ void wifiConnect(String ssid)
       setTime(timeClient.getEpochTime());
       serOut("Connected to " + WiFi.SSID() + "," + WiFi.BSSIDstr() + "," + String(WiFi.RSSI()));
       udp.begin(udpPort);
+      server.begin();
     }
     else
       serOut("Not connected to '" + ssid + "'/'" + pass + "'");        
@@ -627,8 +787,8 @@ void loop() {
     {
       if (WiFi.status() == WL_CONNECTED)
       {
-        udpOut("D" + serCommand.substring(4) + "\n");
-        ncD();
+        //udpOut("D" + serCommand.substring(4) + "\n");
+        ncD(serCommand.substring(4));
       }
     }
 
@@ -636,8 +796,8 @@ void loop() {
     {
       if (WiFi.status() == WL_CONNECTED)
       {
-        udpOut("T" + serCommand.substring(4) + "\n");
-        ncT();
+        //udpOut("T" + serCommand.substring(4) + "\n");
+        ncT(serCommand.substring(4));
       }
     }
 
@@ -702,7 +862,10 @@ void loop() {
     serCommand = "";
   }
 
-  testUdpPacket();
-
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    testUdpPacket();
+  }
+  
   yield();
 }
