@@ -10,7 +10,7 @@
 #include <ESP8266Ping.h>
 
 
-const String ESPversion = "0.65";
+const String ESPversion = "0.66";
 
 const long serTimeout = 5000; //5s serial input timeout
 const long udpTimeout = 5000; //5s UDP input timeout
@@ -261,7 +261,7 @@ void ncD(String ww)
 
 
   //serOut("#" + String(fileLen) + "," + String(partNum) + "," + String(partRem) + "," + String(partCount));
-  if (Serial.readStringUntil('\n') == "START")
+  if (Serial.readStringUntil('\n') == "#START")
   {
     udpOut("#START\n");
     int i = 0;
@@ -295,7 +295,7 @@ void ncD(String ww)
         {
           ok = true;
           rep = 0;
-          if (Serial.readStringUntil('\n') == "NEXT")
+          if (Serial.readStringUntil('\n') == "#NEXT")
           {
             if (i < partNum)
               Serial.write(udpRecBuffer + 2, partLen);
@@ -312,7 +312,7 @@ void ncD(String ww)
       }
     }
     
-    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
+    udpOut(Serial.readStringUntil('\n') + "\n");    
   }
 }
 
@@ -419,7 +419,7 @@ void ncR(String ww)
     partCount++;
     
   serOut(rdy);
-  if (Serial.readStringUntil('\n') == "START")
+  if (Serial.readStringUntil('\n') == "#START")
   {
     udpOut("#START\n");
     int i = 0;
@@ -453,7 +453,7 @@ void ncR(String ww)
         {
           ok = true;
           rep = 0;
-          if (Serial.readStringUntil('\n') == "NEXT")
+          if (Serial.readStringUntil('\n') == "#NEXT")
           {
             if (i < partNum)
               Serial.write(udpRecBuffer + 2, partLen);
@@ -470,7 +470,7 @@ void ncR(String ww)
       }
     }
     
-    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
+    udpOut(Serial.readStringUntil('\n') + "\n");    
   }
 }
 
@@ -496,7 +496,7 @@ void ncT(String ww)
 
 
   //serOut("#" + String(fileLen) + "," + String(partNum) + "," + String(partRem) + "," + String(partCount));
-  if (Serial.readStringUntil('\n') == "START")
+  if (Serial.readStringUntil('\n') == "#START")
   {
     udpOut("#START\n");
     int i = 0;
@@ -530,7 +530,7 @@ void ncT(String ww)
         {
           ok = true;
           rep = 0;
-          if (Serial.readStringUntil('\n') == "NEXT")
+          if (Serial.readStringUntil('\n') == "#NEXT")
           {
             if (i < partNum)
               Serial.write(udpRecBuffer + 2, partLen);
@@ -547,7 +547,7 @@ void ncT(String ww)
       }
     }
     
-    udpOut("#" + Serial.readStringUntil('\n') + "\n");    
+    udpOut(Serial.readStringUntil('\n') + "\n");    
   }
 }
 
